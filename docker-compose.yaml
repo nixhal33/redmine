@@ -1,0 +1,79 @@
+# Redmine + MySQL Compose. PostgreSQL/SQLite variants noted below.
+# First boot: migrates DB, creates admin/admin, then load default data via Administration UI.
+# Docs: doc/INSTALL, config/database.yml.example, config/configuration.yml.example
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    command: --transaction-isolation=READ-COMMITTED --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-redmine}
+      MYSQL_USER: ${MYSQL_USER:-redmine}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-redmine}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redmine:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      RAILS_ENV: ${RAILS_ENV:-production}
+      RAILS_LOG_TO_STDOUT: 1
+      # Rails 8 honors DATABASE_URL; entrypoint falls back to REDMINE_DB_* if unset.
+      DATABASE_URL: ${DATABASE_URL:-mysql2://redmine:redmine@db:3306/redmine?encoding=utf8mb4}
+      # Set once (openssl rand -hex 40) and keep stable across replicas/restarts:
+      REDMINE_SECRET_KEY_BASE: ${REDMINE_SECRET_KEY_BASE:-change-me-to-openssl-rand-hex-40}
+      REDMINE_DB_ADAPTER: ${REDMINE_DB_ADAPTER:-mysql2}
+      REDMINE_DB_HOST: ${REDMINE_DB_HOST:-db}
+      REDMINE_DB_PORT: ${REDMINE_DB_PORT:-3306}
+      REDMINE_DB_NAME: ${REDMINE_DB_NAME:-redmine}
+      REDMINE_DB_USER: ${REDMINE_DB_USER:-redmine}
+      REDMINE_DB_PASS: ${REDMINE_DB_PASS:-redmine}
+      # Optional: encrypts SCM/LDAP/TOTP in DB (configuration.yml database_cipher_key).
+      # REDMINE_CIPHER_KEY: change-me-too
+      # Optional SMTP (else configure via mounted configuration.yml):
+      # REDMINE_SMTP_ADDRESS: mail.example.com
+    volumes:
+      # Stateful dirs from doc/INSTALL step 8 + plugins/themes for extensions:
+      - redmine-files:/usr/src/redmine/files
+      - redmine-log:/usr/src/redmine/log
+      - redmine-tmp:/usr/src/redmine/tmp
+      - redmine-plugins:/usr/src/redmine/plugins
+      - redmine-themes:/usr/src/redmine/themes
+      # Optional: mount your own configs instead of env vars:
+      # - ./config/database.yml:/usr/src/redmine/config/database.yml:ro
+      # - ./config/configuration.yml:/usr/src/redmine/config/configuration.yml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/up"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+volumes:
+  mysql-data:
+  redmine-files:
+  redmine-log:
+  redmine-tmp:
+  redmine-plugins:
+  redmine-themes:
+
+# --- Variants ---
+# PostgreSQL: replace db image with postgres:14, DATABASE_URL: postgresql://redmine:redmine@db:5432/redmine
+# SQLite3 (single-node, no db service): remove db + depends_on, set DATABASE_URL: sqlite3:db/redmine.sqlite3
+#   and add volume redmine-db:/usr/src/redmine/db
