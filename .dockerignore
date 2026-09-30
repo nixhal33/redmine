@@ -1,0 +1,38 @@
+.git
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Ruby / Rails
+.bundle
+vendor/bundle
+log/*
+tmp/*
+public/assets
+public/packs
+node_modules
+coverage
+.rspec_status
+
+# Docs
+README*
+CHANGELOG*
+doc/
+
+# IDE / OS
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+*.swp
